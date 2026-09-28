@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Avventura Marina di Pupy 🐠</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        * {
+            font-family: 'Fredoka', cursive, sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #070d18;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        /* Portrait Mobile Container Wrapper */
+        .game-wrapper {
+            width: 100vw;
+            height: 100vh;
+            max-width: 480px;
+            max-height: 920px;
+            position: relative;
+            background: linear-gradient(180deg, #0f2b48 0%, #17426c 40%, #0d2843 80%, #051321 100%);
+            box-shadow: 0 0 40px rgba(0, 0, 0, 0.85);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* HUD Item Icon Styles */
+        .hud-icon {
+            transition: all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .hud-icon.collected {
+            transform: scale(1.15);
+            filter: drop-shadow(0 0 8px #fef08a);
+            opacity: 1;
+            background-color: rgba(254, 240, 138, 0.25);
+            border-color: #fde047;
+        }
+
+        .hud-icon.uncollected {
+            opacity: 0.25;
+            filter: grayscale(100%) contrast(70%);
+            background-color: rgba(15, 23, 42, 0.6);
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        /* Custom Heart and Floating Animations */
+        @keyframes pulse-heart {
+            0%, 100% { transform: scale(1); filter: drop-shadow(0 0 10px rgba(244, 114, 182, 0.8)); }
+            50% { transform: scale(1.12); filter: drop-shadow(0 0 20px rgba(236, 72, 153, 1)); }
+        }
+
+        .animate-pulse-heart {
+            animation: pulse-heart 1.8s infinite ease-in-out;
+        }
+
+        /* Ambient Underwater Bubbles */
+        .bubble {
+            position: absolute;
+            background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.1));
+            border-radius: 50%;
+            pointer-events: none;
+            animation: floatUp linear infinite;
+        }
+
+        @keyframes floatUp {
+            0% { transform: translateY(105vh) scale(0.3); opacity: 0; }
+            20% { opacity: 0.6; }
+            100% { transform: translateY(-10vh) scale(1.1); opacity: 0; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="game-wrapper shadow-2xl rounded-none sm:rounded-3xl border-0 sm:border-2 border-cyan-500/30">
+        
+        <!-- Background Ambient Water Rays & Bubbles -->
+        <div id="bubbles-container" class="absolute inset-0 pointer-events-none z-0 overflow-hidden"></div>
+
+        <div class="relative z-20 p-3 bg-slate-950/70 backdrop-blur-md border-b border-cyan-500/20 shadow-lg">
+            <div class="flex items-center justify-between mb-2 px-1">
+                <div class="flex items-center gap-1.5">
+                    <span class="text-xs text-cyan-300 font-extrabold uppercase tracking-wider">Vite:</span>
+                    <div id="lives-display" class="flex gap-1 text-red-500 text-base filter drop-shadow">
+                        ❤️ ❤️
+                    </div>
+                </div>
+                
+                <div class="flex items-center gap-2">
+                    <span id="diff-badge" class="text-[10px] font-bold uppercase tracking-wider text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded-full border border-amber-500/40">
+                        ⚡ Sfida Ardua
+                    </span>
+                    <div class="text-xs text-yellow-300 font-extrabold bg-slate-900/90 px-2.5 py-1 rounded-full border border-yellow-500/40">
+                        Oggetti: <span id="item-counter" class="text-white text-sm">0</span>/10
+                    </div>
+                </div>
+            </div>
+
+            <!-- Inventory Grid without labels -->
+            <div id="hud-inventory" class="grid grid-cols-5 gap-1.5 justify-items-center">
+                <!-- 10 Emojis dynamically rendered without text labels -->
+            </div>
+        </div>
+
+        <div class="relative flex-1 w-full h-full z-10 overflow-hidden">
+            <canvas id="gameCanvas"></canvas>
+
+            <!-- Touch Control Guidance Overlay -->
+            <div id="touch-hint" class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none transition-opacity duration-500 bg-black/40 p-4">
+                <div class="text-5xl mb-3 animate-bounce">👆</div>
+                <div class="bg-slate-900/90 border border-cyan-400/40 p-4 rounded-2xl text-center max-w-xs shadow-2xl">
+                    <p class="text-cyan-300 font-extrabold text-base mb-1">Guida Pupy!</p>
+                    <p class="text-slate-200 text-xs leading-relaxed">
+                        Tieni premuto e trascina il dito sullo schermo per schivare i pesci grandi e raccogliere tutti e 10 gli oggetti!
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div id="gameover-modal" class="hidden absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/85 backdrop-blur-md p-6 text-center">
+            <div class="bg-slate-900/90 border-2 border-red-500/40 p-6 rounded-3xl max-w-xs shadow-2xl flex flex-col items-center">
+                <div class="text-6xl mb-3 animate-bounce">🦈</div>
+                <h2 class="text-2xl font-black text-red-400 mb-2">Attenta Pupy!</h2>
+                <p class="text-slate-300 text-sm mb-6 leading-relaxed">
+                    Un pesce grande ti ha toccata! Fai un bel respiro e riprova a raccogliere tutti gli oggetti!
+                </p>
+                <button id="btn-restart" class="w-full py-3 px-6 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-extrabold text-base rounded-2xl shadow-lg active:scale-95 transition-all border border-cyan-300/30">
+                    🔄 Riprova Ora
+                </button>
+            </div>
+        </div>
+
+        <div id="win-modal" class="hidden absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-lg p-6 text-center overflow-hidden">
+            <!-- Hearts Background Animation Canvas -->
+            <canvas id="heartsCanvas" class="absolute inset-0 pointer-events-none z-0"></canvas>
+
+            <div class="relative z-10 flex flex-col items-center w-full max-w-xs">
+                <!-- Crown and Fish Emoji -->
+                <div class="text-6xl mb-2 animate-pulse-heart">👑🐠</div>
+                
+                <h1 class="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-pink-400 to-rose-400 mb-4 tracking-wide drop-shadow-lg">
+                    hai vinto!!
+                </h1>
+
+                <!-- Special Verona Celebration Message Box -->
+                <div class="bg-gradient-to-b from-pink-950/90 to-purple-950/90 border-2 border-pink-400/60 p-5 rounded-3xl shadow-2xl backdrop-blur-md mb-6 transform hover:scale-102 transition-transform">
+                    <p class="text-pink-100 text-sm font-semibold leading-relaxed tracking-wide">
+                        brava Pupy! hai vinto una giornata a Verona insieme, tieniti pronta per dei momenti spettacolari insieme...TANTI AUGURII&lt;3
+                    </p>
+                </div>
+
+                <button id="btn-replay" class="w-full py-3.5 px-6 bg-gradient-to-r from-pink-500 via-rose-500 to-red-500 text-white font-extrabold text-base rounded-2xl shadow-xl hover:shadow-pink-500/40 active:scale-95 transition-all border border-pink-300/40">
+                    💖 Gioca Di Nuovo
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        /* Audio Synthesizer Class */
+        class SoundFX {
+            constructor() {
+                this.ctx = null;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    if (AudioContext) this.ctx = new AudioContext();
+                }
+                if (this.ctx && this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            playCollect() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(523.25, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(1046.50, this.ctx.currentTime + 0.15);
+                gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.15);
+            }
+
+            playHurt() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(220, this.ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(90, this.ctx.currentTime + 0.25);
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.25);
+            }
+
+            playWin() {
+                if (!this.ctx) return;
+                const notes = [261.63, 329.63, 392.00, 523.25, 659.25, 783.99, 1046.50];
+                notes.forEach((freq, idx) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.value = freq;
+                    gain.gain.setValueAtTime(0.2, this.ctx.currentTime + idx * 0.08);
+                    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + idx * 0.08 + 0.35);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(this.ctx.currentTime + idx * 0.08);
+                    osc.stop(this.ctx.currentTime + idx * 0.08 + 0.35);
+                });
+            }
+        }
+
+        const sound = new SoundFX();
+
+        const REQUIRED_ITEMS = [
+            { id: 'gelato', emoji: '🍦' },
+            { id: 'sushi', emoji: '🍣' },
+            { id: 'statua', emoji: '🗿' },
+            { id: 'fiori', emoji: '💐' },
+            { id: 'scarpe', emoji: '👠' },
+            { id: 'alberi', emoji: '🌳' },
+            { id: 'lago', emoji: '🏞️' },
+            { id: 'edificio', emoji: '🏢' },
+            { id: 'buste', emoji: '🛍️' },
+            { id: 'sole', emoji: '☀️' }
+        ];
+
+        /* Canvas Setup & Responsive Handlers */
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function resizeCanvas() {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        let lives = 2; // Fast-paced and challenging: 2 lives total
+        let collectedItemIds = new Set();
+        let isGameOver = false;
+        let isGameWon = false;
+        let activeEnemies = [];
+        let activeCollectibles = [];
+        let lastFrameTime = 0;
+        let enemySpawnTimer = 0;
+        let itemSpawnTimer = 0;
+
+        /* Player Definition */
+        const player = {
+            x: canvas.width / 2,
+            y: canvas.height / 2,
+            targetX: canvas.width / 2,
+            targetY: canvas.height / 2,
+            radius: 20,
+            lerpSpeed: 0.25,
+            facingRight: true,
+            invulnerableTimer: 0
+        };
+
+        const bubblesContainer = document.getElementById('bubbles-container');
+        function initBubbles() {
+            bubblesContainer.innerHTML = '';
+            for (let i = 0; i < 18; i++) {
+                const bubble = document.createElement('div');
+                bubble.className = 'bubble';
+                const size = Math.random() * 12 + 6;
+                bubble.style.width = `${size}px`;
+                bubble.style.height = `${size}px`;
+                bubble.style.left = `${Math.random() * 100}%`;
+                bubble.style.animationDuration = `${Math.random() * 5 + 4}s`;
+                bubble.style.animationDelay = `${Math.random() * 4}s`;
+                bubblesContainer.appendChild(bubble);
+            }
+        }
+        initBubbles();
+
+        const hudInventory = document.getElementById('hud-inventory');
+        function initHUD() {
+            hudInventory.innerHTML = '';
+            REQUIRED_ITEMS.forEach(item => {
+                const el = document.createElement('div');
+                el.id = `hud-item-${item.id}`;
+                el.className = 'hud-icon uncollected text-xl p-1 rounded-xl border flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9';
+                el.innerHTML = item.emoji; // Pure emoji only, no text labels
+                hudInventory.appendChild(el);
+            });
+            updateLivesHUD();
+        }
+
+        function updateLivesHUD() {
+            const livesElem = document.getElementById('lives-display');
+            livesElem.innerHTML = '❤️ '.repeat(Math.max(0, lives));
+        }
+
+        let touchStarted = false;
+        const hintOverlay = document.getElementById('touch-hint');
+
+        function handlePointer(e) {
+            sound.init();
+            if (isGameOver || isGameWon) return;
+
+            const rect = canvas.getBoundingClientRect();
+            let clientX, clientY;
+
+            if (e.touches && e.touches.length > 0) {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            } else {
+                clientX = e.clientX;
+                clientY = e.clientY;
+            }
+
+            player.targetX = clientX - rect.left;
+            player.targetY = clientY - rect.top;
+
+            if (!touchStarted) {
+                touchStarted = true;
+                hintOverlay.style.opacity = '0';
+                setTimeout(() => hintOverlay.style.display = 'none', 500);
+            }
+        }
+
+        window.addEventListener('pointerdown', handlePointer);
+        window.addEventListener('pointermove', handlePointer);
+        window.addEventListener('touchstart', (e) => {
+            handlePointer(e);
+        }, { passive: true });
+        window.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            handlePointer(e);
+        }, { passive: false });
+
+        function spawnEnemy() {
+            const isShark = Math.random() < 0.45;
+            const radius = isShark ? Math.random() * 8 + 28 : Math.random() * 10 + 22;
+            const fromLeft = Math.random() < 0.5;
+
+            // Challenging enemy speeds
+            const speed = (Math.random() * 2.2 + 2.0) * (isShark ? 1.35 : 1.1);
+
+            activeEnemies.push({
+                x: fromLeft ? -radius * 2 : canvas.width + radius * 2,
+                y: Math.random() * (canvas.height - 120) + 60,
+                radius: radius,
+                vx: fromLeft ? speed : -speed,
+                emoji: isShark ? '🦈' : (Math.random() < 0.5 ? '🐋' : '🐟'),
+                facingRight: fromLeft
+            });
+        }
+
+        function spawnCollectible() {
+            const uncollected = REQUIRED_ITEMS.filter(item => !collectedItemIds.has(item.id));
+            if (uncollected.length === 0) return;
+
+            const activeIds = new Set(activeCollectibles.map(c => c.id));
+            const available = uncollected.filter(item => !activeIds.has(item.id));
+
+            if (available.length === 0) return;
+
+            const selected = available[Math.floor(Math.random() * available.length)];
+
+            activeCollectibles.push({
+                id: selected.id,
+                emoji: selected.emoji,
+                x: Math.random() * (canvas.width - 70) + 35,
+                y: -30,
+                vy: Math.random() * 0.9 + 1.1,
+                radius: 18,
+                wobble: Math.random() * Math.PI * 2
+            });
+        }
+
+        function update(delta) {
+            if (isGameOver || isGameWon) return;
+
+            // Smooth interpolation to touch target
+            const dx = player.targetX - player.x;
+            const dy = player.targetY - player.y;
+
+            if (Math.abs(dx) > 1) {
+                player.facingRight = dx > 0;
+            }
+
+            player.x += dx * player.lerpSpeed;
+            player.y += dy * player.lerpSpeed;
+
+            // Canvas boundary locking
+            player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x));
+            player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y));
+
+            if (player.invulnerableTimer > 0) {
+                player.invulnerableTimer -= delta;
+            }
+
+            // Spawn intervals
+            enemySpawnTimer += delta;
+            if (enemySpawnTimer > 800) {
+                spawnEnemy();
+                enemySpawnTimer = 0;
+            }
+
+            itemSpawnTimer += delta;
+            if (itemSpawnTimer > 1400 && activeCollectibles.length < 3) {
+                spawnCollectible();
+                itemSpawnTimer = 0;
+            }
+
+            // Enemies collision check
+            for (let i = activeEnemies.length - 1; i >= 0; i--) {
+                const enemy = activeEnemies[i];
+                enemy.x += enemy.vx;
+
+                if (player.invulnerableTimer <= 0) {
+                    const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
+                    if (dist < enemy.radius + player.radius - 4) {
+                        sound.playHurt();
+                        lives--;
+                        updateLivesHUD();
+                        player.invulnerableTimer = 1400;
+
+                        if (lives <= 0) {
+                            triggerGameOver();
+                        }
+                    }
+                }
+
+                if ((enemy.vx > 0 && enemy.x > canvas.width + 80) || (enemy.vx < 0 && enemy.x < -80)) {
+                    activeEnemies.splice(i, 1);
+                }
+            }
+
+            // Collectibles collection check
+            for (let i = activeCollectibles.length - 1; i >= 0; i--) {
+                const item = activeCollectibles[i];
+                item.y += item.vy;
+                item.wobble += 0.06;
+                const currentX = item.x + Math.sin(item.wobble) * 2;
+
+                const dist = Math.hypot(currentX - player.x, item.y - player.y);
+                if (dist < item.radius + player.radius + 4) {
+                    sound.playCollect();
+                    collectedItemIds.add(item.id);
+
+                    // Update HUD UI
+                    const hudEl = document.getElementById(`hud-item-${item.id}`);
+                    if (hudEl) {
+                        hudEl.classList.remove('uncollected');
+                        hudEl.classList.add('collected');
+                    }
+                    document.getElementById('item-counter').innerText = collectedItemIds.size;
+
+                    activeCollectibles.splice(i, 1);
+
+                    // Win condition trigger when all 10 items eaten
+                    if (collectedItemIds.size === REQUIRED_ITEMS.length) {
+                        triggerWin();
+                    }
+                    continue;
+                }
+
+                if (item.y > canvas.height + 40) {
+                    activeCollectibles.splice(i, 1);
+                }
+            }
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Render Items
+            activeCollectibles.forEach(item => {
+                ctx.save();
+                const renderX = item.x + Math.sin(item.wobble) * 2;
+                ctx.font = `${item.radius * 2}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.shadowColor = '#fde047';
+                ctx.shadowBlur = 12;
+                ctx.fillText(item.emoji, renderX, item.y);
+                ctx.restore();
+            });
+
+            // Render Enemies
+            activeEnemies.forEach(enemy => {
+                ctx.save();
+                ctx.translate(enemy.x, enemy.y);
+                if (!enemy.facingRight) {
+                    ctx.scale(-1, 1);
+                }
+                ctx.font = `${enemy.radius * 2.1}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(enemy.emoji, 0, 0);
+                ctx.restore();
+            });
+
+            // Render Pesciolina Player
+            if (!isGameOver) {
+                ctx.save();
+                ctx.translate(player.x, player.y);
+
+                if (player.invulnerableTimer > 0 && Math.floor(Date.now() / 90) % 2 === 0) {
+                    ctx.globalAlpha = 0.45;
+                }
+
+                if (!player.facingRight) {
+                    ctx.scale(-1, 1);
+                }
+
+                ctx.font = `${player.radius * 2.3}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.shadowColor = '#f472b6';
+                ctx.shadowBlur = 14;
+                ctx.fillText('🐠', 0, 0);
+
+                ctx.restore();
+            }
+        }
+
+        function gameLoop(timestamp) {
+            if (!lastFrameTime) lastFrameTime = timestamp;
+            const delta = timestamp - lastFrameTime;
+            lastFrameTime = timestamp;
+
+            update(delta);
+            render();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function triggerGameOver() {
+            isGameOver = true;
+            document.getElementById('gameover-modal').classList.remove('hidden');
+        }
+
+        function triggerWin() {
+            isGameWon = true;
+            sound.playWin();
+            document.getElementById('win-modal').classList.remove('hidden');
+            startHeartsAnimation();
+        }
+
+        let heartsAnimationId;
+        function startHeartsAnimation() {
+            const hCanvas = document.getElementById('heartsCanvas');
+            const hCtx = hCanvas.getContext('2d');
+            
+            function resizeHeartsCanvas() {
+                hCanvas.width = hCanvas.parentElement.clientWidth;
+                hCanvas.height = hCanvas.parentElement.clientHeight;
+            }
+            resizeHeartsCanvas();
+
+            const heartEmojis = ['💖', '💕', '❤️', '💗', '💓', '💝', '❣️'];
+            const hearts = Array.from({ length: 55 }, () => ({
+                x: Math.random() * hCanvas.width,
+                y: Math.random() * hCanvas.height + hCanvas.height,
+                size: Math.random() * 26 + 18,
+                speedY: Math.random() * 2.8 + 1.4,
+                speedX: (Math.random() - 0.5) * 1.8,
+                emoji: heartEmojis[Math.floor(Math.random() * heartEmojis.length)],
+                rotation: Math.random() * Math.PI * 2,
+                rotSpeed: (Math.random() - 0.5) * 0.06
+            }));
+
+            function animateHearts() {
+                hCtx.clearRect(0, 0, hCanvas.width, hCanvas.height);
+
+                hearts.forEach(h => {
+                    h.y -= h.speedY;
+                    h.x += h.speedX;
+                    h.rotation += h.rotSpeed;
+
+                    if (h.y < -40) {
+                        h.y = hCanvas.height + 40;
+                        h.x = Math.random() * hCanvas.width;
+                    }
+
+                    hCtx.save();
+                    hCtx.translate(h.x, h.y);
+                    hCtx.rotate(h.rotation);
+                    hCtx.font = `${h.size}px sans-serif`;
+                    hCtx.textAlign = 'center';
+                    hCtx.textBaseline = 'middle';
+                    hCtx.fillText(h.emoji, 0, 0);
+                    hCtx.restore();
+                });
+
+                heartsAnimationId = requestAnimationFrame(animateHearts);
+            }
+
+            animateHearts();
+        }
+
+        function resetGame() {
+            lives = 2;
+            collectedItemIds.clear();
+            activeEnemies = [];
+            activeCollectibles = [];
+            isGameOver = false;
+            isGameWon = false;
+
+            player.x = canvas.width / 2;
+            player.y = canvas.height / 2;
+            player.targetX = canvas.width / 2;
+            player.targetY = canvas.height / 2;
+
+            document.getElementById('item-counter').innerText = '0';
+            document.getElementById('gameover-modal').classList.add('hidden');
+            document.getElementById('win-modal').classList.add('hidden');
+
+            if (heartsAnimationId) {
+                cancelAnimationFrame(heartsAnimationId);
+            }
+
+            initHUD();
+        }
+
+        // Button Listeners
+        document.getElementById('btn-restart').addEventListener('click', resetGame);
+        document.getElementById('btn-replay').addEventListener('click', resetGame);
+
+        // Start Application
+        initHUD();
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
